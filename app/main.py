@@ -3,9 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import timedelta
-
 from . import models, schemas, auth, blockchain, games
 from .database import engine, get_db
+import os
+import uvicorn
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -198,3 +199,8 @@ async def root():
         "docs_url": "/docs",
         "redoc_url": "/redoc"
     }
+
+# Server startup
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 4000))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)
