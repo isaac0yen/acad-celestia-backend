@@ -1,0 +1,82 @@
+https://slasapi.nelf.gov.ng/api/services/institutions
+  GET
+  auth: false
+  desc: used to get all the nigerian institutions
+  sample_response:
+    {
+      "status": true,
+      "message": "successful",
+      "data": [
+        {
+          "id": 1,
+          "name": "",
+          "mdacode": "",
+          "level": "",
+          "type": "",
+          "short_name": "",
+          "provider_id": "",
+          "created_at": "",
+          "updated_at": "",
+          "status": ""
+        },
+        ...
+      ]
+    }
+
+
+https://slasapi.nelf.gov.ng/api/student/verify/institute-details
+  Body:
+    {
+      "matric_number": "",
+      "provider_id": ""
+    }
+  POST
+  Auth: false
+  Desc: Used to verify the institute details
+  Sample Response:
+    {
+      "status": true,
+      "message": "Educational Details Verified and Complete",
+      "data": {
+        "missing": false,
+        "proceed": true,
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjI0LzUySFQxMTciLCJpYXQiOjE3NDI4NTgzMjN9.en-VmOgOixBSwxmZwCjNtHsbtCnQHoZjYgpkQqoF2qc"
+      }
+    }
+
+
+https://slasapi.nelf.gov.ng/api/student/register/jamb/verify
+  Body:
+    {
+      "date_of_birth": "",
+      "jamb_number": ""
+    }
+  POST
+  Auth: true
+  Desc: Used to verify the jamb details
+  Auth: true (token gotten from verify institute details)
+  Sample Response:
+    {
+      "status": true,
+      "message": "successful",
+      "data": {
+        "RegNumber": "202330058799JA",
+        "NIN": "96067494361",
+        "Surname": "Oyeniyi",
+        "FirstName": "Isaac",
+        "Middlename": "Inioluwa",
+        "DateofBirth": "2006-05-19",
+        "Gender": "Male",
+        "StateofOrigin": "Kwara",
+        "LGAofOrigin": "Irepodun",
+        "AdmissionYear": "2023",
+        "Institution": "University Of Ilorin, Ilorin, Kwara State",
+        "InstitutionCode": "1119",
+        "Course": "Information Technology",
+        "CourseCode": "102742A",
+        "AdmissionType": "UTME",
+        "ProfilePicture": "",
+        "RequestID": "43CEB36A-C06E-4C79-B8C6-B9FC070FF677",
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjIwMjMzMDA1ODc5OUpBIiwiaWF0IjoxNzQyODU5Mjg4fQ.PILjvQXfy00jDL8JoglgaIDklehPA579DUG58t5UoLw"
+      }
+    }
