@@ -20,6 +20,18 @@ NELF_API_BASE_URL = "https://slasapi.nelf.gov.ng/api"
 security = HTTPBearer()
 
 def create_access_token(data: dict):
+    """
+    Create a JWT access token for user authentication.
+
+    Args:
+        data (dict): The payload data to be encoded in the token.
+
+    Returns:
+        str: The encoded JWT token string.
+
+    Note:
+        The token expires after ACCESS_TOKEN_EXPIRE_MINUTES (default: 30 minutes).
+    """
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
@@ -27,11 +39,25 @@ def create_access_token(data: dict):
     return encoded_jwt
 
 class NELFClient:
+    """
+    Client for interacting with the NELF (Nigerian e-Learning Framework) API.
+    
+    This class provides methods to verify student information through the NELF API,
+    including institution details and JAMB verification.
+    """
     def __init__(self):
         self.base_url = NELF_API_BASE_URL
 
     def get_institutions(self) -> Dict[str, Any]:
-        """Get list of institutions"""
+        """
+        Retrieve a list of registered institutions from the NELF API.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the list of institutions and their details.
+
+        Raises:
+            HTTPException: If the API request fails or returns a non-200 status code.
+        """
         response = requests.get(f"{self.base_url}/services/institutions")
         if response.status_code != 200:
             raise HTTPException(
@@ -41,7 +67,19 @@ class NELFClient:
         return response.json()
 
     def verify_institute_details(self, matric_number: str, provider_id: str) -> Dict[str, Any]:
-        """Verify institute details and get verification token"""
+        """
+        Verify student's institution details and obtain a verification token.
+
+        Args:
+            matric_number (str): Student's matriculation number.
+            provider_id (str): Institution's provider ID.
+
+        Returns:
+            Dict[str, Any]: A verification token for subsequent JAMB verification.
+
+        Raises:
+            HTTPException: If verification fails or API request encounters an error.
+        """
         data = {
             "matric_number": matric_number,
             "provider_id": provider_id
@@ -75,7 +113,20 @@ class NELFClient:
             )
 
     def verify_jamb_details(self, date_of_birth: str, jamb_number: str, token: str) -> Dict[str, Any]:
-        """Verify JAMB details using the token from institute verification"""
+        """
+        Verify student's JAMB details using the token obtained from institution verification.
+
+        Args:
+            date_of_birth (str): Student's date of birth.
+            jamb_number (str): Student's JAMB registration number.
+            token (str): Verification token from institute verification.
+
+        Returns:
+            Dict[str, Any]: Student's verified JAMB details including personal and academic information.
+
+        Raises:
+            HTTPException: If verification fails, token is invalid, or JAMB record is not found.
+        """
         data = {
             "date_of_birth": date_of_birth,
             "jamb_number": jamb_number
@@ -121,7 +172,27 @@ class NELFClient:
             )
 
 def verify_user(db: Session, institution_id: str, matric_number: str, jamb_number: str, date_of_birth: str) -> Optional[models.User]:
-    """Complete user verification process"""
+    """
+    Complete the user verification process by validating both institution and JAMB details.
+
+    This function performs a two-step verification process:
+    1. Verifies institution details and obtains a verification token
+    2. Uses the token to verify JAMB details
+    After successful verification, creates and stores a new user record in the database.
+
+    Args:
+        db (Session): SQLAlchemy database session.
+        institution_id (str): Institution's provider ID.
+        matric_number (str): Student's matriculation number.
+        jamb_number (str): Student's JAMB registration number.
+        date_of_birth (str): Student's date of birth.
+
+    Returns:
+        Optional[models.User]: The created user object if verification is successful.
+
+    Raises:
+        HTTPException: If either institution or JAMB verification fails.
+    """
     nelf_client = NELFClient()
     
     token = nelf_client.verify_institute_details(matric_number, institution_id)
@@ -132,7 +203,7 @@ def verify_user(db: Session, institution_id: str, matric_number: str, jamb_numbe
     print(user_data)
     
     user = models.User(
-        reg_number=user_data["RegNumber"],
+        reg_number=user_data["RegNumber"] + " " + matric_number,
         nin=user_data["NIN"],
         surname=user_data["Surname"],
         first_name=user_data["FirstName"],
@@ -158,6 +229,19 @@ def verify_user(db: Session, institution_id: str, matric_number: str, jamb_numbe
     return user
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)) -> models.User:
+    """
+    Verify and decode a JWT token to authenticate a user.
+
+    Args:
+        credentials (HTTPAuthorizationCredentials): The bearer token credentials from the request.
+        db (Session): SQLAlchemy database session.
+
+    Returns:
+        models.User: The authenticated user object.
+
+    Raises:
+        HTTPException: If the token is invalid, expired, or the user is not found.
+    """
     try:
         token = credentials.credentials
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
