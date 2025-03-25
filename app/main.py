@@ -11,9 +11,19 @@ from .database import engine, get_db
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="Celestia API",
-    description="Modern REST API for Celestia - University Token System",
-    version="1.0.0"
+    title="Acad Celestia API",
+    description="""
+    Acad Celestia Backend API - University Token Management System
+    """,
+    version="1.0.0",
+    contact={
+        "name": "Acad Celestia Team",
+        "url": "https://acadcelestia.com",
+        "email": "support@acadcelestia.com",
+    },
+    license_info={
+        "name": "Private",
+    },
 )
 
 # CORS configuration
@@ -26,51 +36,62 @@ app.add_middleware(
 )
 
 # Authentication endpoints
-@app.post("/api/institutions", response_model=List[schemas.InstitutionBase])
+@app.get("/api/institutions", response_model=List[schemas.InstitutionBase], tags=["Authentication"])
 async def get_institutions():
-    """Get list of Nigerian institutions"""
+    """
+    Get list of Nigerian institutions.
+    
+    Returns a list of all registered institutions that can be used for verification.
+    """
     nelf_client = auth.NELFClient()
     result = nelf_client.get_institutions()
     if not result or not result.get("status"):
         raise HTTPException(status_code=400, detail="Failed to fetch institutions")
     return result["data"]
 
-@app.post("/api/verify/institute")
-async def verify_institute(verification: schemas.InstituteVerification):
-    """Verify institute details"""
-    nelf_client = auth.NELFClient()
-    result = nelf_client.verify_institute_details(
-        verification.matric_number,
-        verification.provider_id
-    )
-    if not result or not result.get("status"):
-        raise HTTPException(status_code=400, detail="Institute verification failed")
-    return result
-
-@app.post("/api/verify/jamb")
-async def verify_jamb(verification: schemas.JambVerification,
-                     institute_verification: schemas.InstituteVerification,
-                     db: Session = Depends(get_db)):
-    """Complete verification process and create user"""
-    user = auth.verify_user(db, institute_verification, verification)
-    if not user:
-        raise HTTPException(status_code=400, detail="Verification failed")
+@app.post("/api/auth/verify", response_model=schemas.Token, tags=["Authentication"])
+async def verify_user(verification: schemas.JambVerification, db: Session = Depends(get_db)):
+    """
+    Verify user using JAMB details and create account.
     
-    access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = auth.create_access_token(
-        data={"sub": user.reg_number}, expires_delta=access_token_expires
+    The verification process:
+    1. Verifies institution details
+    2. Uses the verification token to verify JAMB details
+    3. Creates a new user account if verification succeeds
+    
+    Parameters:
+    - **institution_id**: ID of the selected institution
+    - **matric_number**: Student's matriculation number
+    - **jamb_number**: JAMB registration number
+    - **date_of_birth**: Date of birth in MM/DD/YYYY format
+    
+    Returns a JWT token on successful verification.
+    """
+    user = auth.verify_user(
+        db,
+        verification.institution_id,
+        verification.matric_number,
+        verification.jamb_number,
+        verification.date_of_birth
     )
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification failed"
+        )
+    
+    access_token = auth.create_access_token(data={"sub": user.id})
     return {"access_token": access_token, "token_type": "bearer"}
 
 # User endpoints
-@app.get("/api/me", response_model=schemas.User)
-async def get_current_user(current_user: models.User = Depends(auth.get_current_user)):
+@app.get("/api/me", response_model=schemas.User, tags=["User"])
+def get_current_user(current_user: models.User = Depends(auth.verify_token)):
     """Get current user details"""
     return current_user
 
-@app.get("/api/me/wallet", response_model=schemas.Wallet)
-async def get_wallet(current_user: models.User = Depends(auth.get_current_user),
-                    db: Session = Depends(get_db)):
+@app.get("/api/me/wallet", response_model=schemas.Wallet, tags=["Wallet"])
+def get_wallet(current_user: models.User = Depends(auth.verify_token), db: Session = Depends(get_db)):
     """Get user's wallet"""
     wallet = db.query(models.Wallet).filter(
         models.Wallet.user_id == current_user.id
@@ -79,9 +100,9 @@ async def get_wallet(current_user: models.User = Depends(auth.get_current_user),
         raise HTTPException(status_code=404, detail="Wallet not found")
     return wallet
 
-@app.get("/api/me/transactions", response_model=List[schemas.Transaction])
-async def get_transactions(
-    current_user: models.User = Depends(auth.get_current_user),
+@app.get("/api/me/transactions", response_model=List[schemas.Transaction], tags=["Wallet"])
+def get_transactions(
+    current_user: models.User = Depends(auth.verify_token),
     db: Session = Depends(get_db),
     limit: int = 10
 ):
@@ -92,10 +113,10 @@ async def get_transactions(
     return transactions
 
 # Token market endpoints
-@app.post("/api/token/buy")
+@app.post("/api/token/buy", tags=["Token Market"])
 async def buy_tokens(
     amount: float,
-    current_user: models.User = Depends(auth.get_current_user),
+    current_user: models.User = Depends(auth.verify_token),
     db: Session = Depends(get_db)
 ):
     """Buy tokens"""
@@ -110,10 +131,10 @@ async def buy_tokens(
         raise HTTPException(status_code=400, detail=result["message"])
     return result
 
-@app.post("/api/token/sell")
+@app.post("/api/token/sell", tags=["Token Market"])
 async def sell_tokens(
     amount: float,
-    current_user: models.User = Depends(auth.get_current_user),
+    current_user: models.User = Depends(auth.verify_token),
     db: Session = Depends(get_db)
 ):
     """Sell tokens"""
@@ -128,7 +149,7 @@ async def sell_tokens(
         raise HTTPException(status_code=400, detail=result["message"])
     return result
 
-@app.get("/api/token/market/{institution_code}")
+@app.get("/api/token/market/{institution_code}", tags=["Token Market"])
 async def get_market_stats(
     institution_code: str,
     db: Session = Depends(get_db)
@@ -141,11 +162,11 @@ async def get_market_stats(
     return result
 
 # Game endpoints
-@app.post("/api/games/play")
+@app.post("/api/games/play", tags=["Games"])
 async def play_game(
     game_type: str,
     stake_amount: float,
-    current_user: models.User = Depends(auth.get_current_user),
+    current_user: models.User = Depends(auth.verify_token),
     db: Session = Depends(get_db)
 ):
     """Play a game"""
@@ -160,9 +181,9 @@ async def play_game(
         raise HTTPException(status_code=400, detail=result["message"])
     return result
 
-@app.get("/api/games/history", response_model=List[schemas.Game])
+@app.get("/api/games/history", response_model=List[schemas.Game], tags=["Games"])
 async def get_game_history(
-    current_user: models.User = Depends(auth.get_current_user),
+    current_user: models.User = Depends(auth.verify_token),
     db: Session = Depends(get_db),
     limit: int = 10
 ):
@@ -170,10 +191,10 @@ async def get_game_history(
     game_manager = games.GameManager(db)
     return game_manager.get_user_games(current_user.id, limit)
 
-@app.get("/")
+@app.get("/", tags=["Root"])
 async def root():
     return {
-        "message": "Welcome to Celestia API",
+        "message": "Welcome to Acad Celestia API",
         "docs_url": "/docs",
         "redoc_url": "/redoc"
     }

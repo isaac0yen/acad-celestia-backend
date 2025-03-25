@@ -6,11 +6,13 @@ from .models import UserType, TransactionType
 class InstitutionBase(BaseModel):
     id: int
     name: str
-    mdacode: str
-    level: str
+    mdacode: Optional[str] = None
+    level: Optional[str] = None
     type: str
-    short_name: str
+    short_name: Optional[str] = None
     provider_id: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     status: str
 
 class InstituteVerification(BaseModel):
@@ -18,8 +20,10 @@ class InstituteVerification(BaseModel):
     provider_id: str
 
 class JambVerification(BaseModel):
-    date_of_birth: str
+    institution_id: str
+    matric_number: str
     jamb_number: str
+    date_of_birth: str
 
 class UserBase(BaseModel):
     reg_number: str
@@ -51,6 +55,9 @@ class User(UserBase):
 
     class Config:
         from_attributes = True
+
+class UserLogin(BaseModel):
+    reg_number: str
 
 class WalletBase(BaseModel):
     balance: float = 0.0
