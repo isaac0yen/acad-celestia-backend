@@ -90,12 +90,6 @@ const User = sequelize.define('User', {
     allowNull: true,
     field: 'profile_picture'
   },
-  requestId: {
-    type: DataTypes.STRING,
-    unique: true,
-    allowNull: false,
-    field: 'request_id'
-  },
   userType: {
     type: DataTypes.ENUM('student', 'admin'),
     defaultValue: 'student',

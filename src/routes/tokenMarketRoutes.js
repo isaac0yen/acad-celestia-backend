@@ -230,22 +230,5 @@ router.get('/token/balances', [
   checkUserStatus
 ], TokenMarketController.getUserTokenBalances);
 
-/**
- * @swagger
- * /api/admin/populate-tokens:
- *   post:
- *     summary: Populate token markets from institutions API (Admin only)
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Token markets populated
- */
-router.post('/admin/populate-tokens', [
-  authenticate,
-  checkUserStatus,
-  // Add admin check middleware here
-], TokenMarketController.populateTokenMarkets);
 
 module.exports = router;

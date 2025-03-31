@@ -19,8 +19,6 @@ const authenticate = async (req, res, next) => {
     }
     
     const token = authHeader.split(' ')[1];
-
-    console.log("token: ", token)
     
     try {
       const user = await AuthService.verifyToken(token);

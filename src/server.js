@@ -93,8 +93,8 @@ const startServer = async () => {
     // Test database connection
     await testConnection();
     
-    // Sync models with database
-    await sequelize.sync({ alter: process.env.NODE_ENV === 'development' });
+    // Sync models with database - disable alter mode to prevent "Too many keys" error
+    //await sequelize.sync({ alter: process.env.NODE_ENV === 'development' });
     console.log('Database synchronized');
     
     // Initialize cron jobs

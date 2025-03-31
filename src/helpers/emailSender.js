@@ -20,7 +20,7 @@ const transporter = nodemailer.createTransport({
  */
 const sendVerificationEmail = async (to, code) => {
   const mailOptions = {
-    from: `"Acad Celestia" <${process.env.EMAIL_FROM}>`,
+    from: process.env.EMAIL_FROM,
     to,
     subject: 'Verify Your Email Address',
     html: `

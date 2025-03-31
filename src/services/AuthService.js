@@ -153,7 +153,6 @@ class AuthService {
         courseCode: userData.CourseCode,
         admissionType: userData.AdmissionType,
         profilePicture: userData.ProfilePicture || null,
-        requestId: userData.RequestID,
         userType: 'student',
         status: 'PENDING'
       });
@@ -382,10 +381,7 @@ class AuthService {
    * @returns {Promise<Object>} User object
    */
   async verifyToken(token) {
-
-    console.log(token)
-
-    try {
+      try {
       const decoded = jwt.verify(token, this.jwtSecret);
       const userId = decoded.sub;
       const tokenId = decoded.tokenId;

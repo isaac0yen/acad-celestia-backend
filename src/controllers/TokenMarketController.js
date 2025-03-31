@@ -96,8 +96,17 @@ class TokenMarketController {
       tokenMarket.volume24h += amount;
       
       // Adjust token value based on buy pressure (simple algorithm)
-      const priceImpact = (amount / tokenMarket.liquidityPool) * 0.01; // 1% impact per liquidityPool ratio
-      tokenMarket.currentValue *= (1 + priceImpact);
+      // Ensure liquidityPool is not too small to avoid division issues
+      const effectiveLiquidityPool = Math.max(tokenMarket.liquidityPool, 1000); // Minimum 1000 to avoid extreme impacts
+      
+      // Calculate price impact with a reasonable cap
+      const rawPriceImpact = (amount / effectiveLiquidityPool) * 0.01; // 1% impact per liquidityPool ratio
+      const maxPriceImpact = 0.05; // Maximum 5% price impact per transaction
+      const priceImpact = Math.min(rawPriceImpact, maxPriceImpact);
+      
+      // Apply the capped price impact
+      tokenMarket.currentValue = tokenMarket.currentValue * (1 + priceImpact);
+      console.log('Current value:', tokenMarket.currentValue);
       tokenMarket.marketCap = tokenMarket.currentValue * tokenMarket.circulatingSupply;
       tokenMarket.lastUpdated = new Date();
       
@@ -225,8 +234,15 @@ class TokenMarketController {
       tokenMarket.volume24h += nairaAmount;
       
       // Adjust token value based on sell pressure (simple algorithm)
-      const priceImpact = (nairaAmount / tokenMarket.liquidityPool) * 0.01; // 1% impact per liquidityPool ratio
-      tokenMarket.currentValue *= (1 - priceImpact);
+      const effectiveLiquidityPool = Math.max(tokenMarket.liquidityPool, 1000); // Minimum 1000 to avoid extreme impacts
+      
+      // Calculate price impact with a reasonable cap
+      const rawPriceImpact = (nairaAmount / effectiveLiquidityPool) * 0.01; // 1% impact per liquidityPool ratio
+      const maxPriceImpact = 0.05; // Maximum 5% price impact per transaction
+      const priceImpact = Math.min(rawPriceImpact, maxPriceImpact);
+      
+      // Apply the capped price impact
+      tokenMarket.currentValue = tokenMarket.currentValue * (1 - priceImpact);
       tokenMarket.marketCap = tokenMarket.currentValue * tokenMarket.circulatingSupply;
       tokenMarket.lastUpdated = new Date();
       
@@ -389,8 +405,15 @@ class TokenMarketController {
       sourceTokenMarket.volume24h += nairaValue;
       
       // Adjust source token value based on sell pressure
-      const sourcePriceImpact = (nairaValue / sourceTokenMarket.liquidityPool) * 0.01;
-      sourceTokenMarket.currentValue *= (1 - sourcePriceImpact);
+      const effectiveLiquidityPool = Math.max(sourceTokenMarket.liquidityPool, 1000); // Minimum 1000 to avoid extreme impacts
+      
+      // Calculate price impact with a reasonable cap
+      const rawPriceImpact = (nairaValue / effectiveLiquidityPool) * 0.01; // 1% impact per liquidityPool ratio
+      const maxPriceImpact = 0.05; // Maximum 5% price impact per transaction
+      const sourcePriceImpact = Math.min(rawPriceImpact, maxPriceImpact);
+      
+      // Apply the capped price impact
+      sourceTokenMarket.currentValue = sourceTokenMarket.currentValue * (1 - sourcePriceImpact);
       sourceTokenMarket.marketCap = sourceTokenMarket.currentValue * sourceTokenMarket.circulatingSupply;
       sourceTokenMarket.lastUpdated = new Date();
       
@@ -401,8 +424,14 @@ class TokenMarketController {
       targetTokenMarket.volume24h += nairaValueAfterFee;
       
       // Adjust target token value based on buy pressure
-      const targetPriceImpact = (nairaValueAfterFee / targetTokenMarket.liquidityPool) * 0.01;
-      targetTokenMarket.currentValue *= (1 + targetPriceImpact);
+      const effectiveTargetLiquidityPool = Math.max(targetTokenMarket.liquidityPool, 1000); // Minimum 1000 to avoid extreme impacts
+      
+      // Calculate price impact with a reasonable cap
+      const rawTargetPriceImpact = (nairaValueAfterFee / effectiveTargetLiquidityPool) * 0.01; // 1% impact per liquidityPool ratio
+      const targetPriceImpact = Math.min(rawTargetPriceImpact, maxPriceImpact);
+      
+      // Apply the capped price impact
+      targetTokenMarket.currentValue = targetTokenMarket.currentValue * (1 + targetPriceImpact);
       targetTokenMarket.marketCap = targetTokenMarket.currentValue * targetTokenMarket.circulatingSupply;
       targetTokenMarket.lastUpdated = new Date();
       
