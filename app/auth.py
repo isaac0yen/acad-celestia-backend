@@ -104,6 +104,8 @@ class NELFClient:
                     detail=result.get("message", "Institute verification failed")
                 )
 
+            print(result)
+
             return result["data"]["token"]
 
         except requests.RequestException as e:
