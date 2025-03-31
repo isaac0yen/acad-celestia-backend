@@ -1,4 +1,5 @@
 const TokenMarketService = require('../services/TokenMarketService');
+const { TokenMarket } = require('../models');
 
 class TokenMarketController {
   /**
@@ -93,6 +94,89 @@ class TokenMarketController {
         status: false,
         message: error.message
       });
+    }
+  }
+  
+  /**
+   * Get market stats data for dashboard
+   * @param {string} institutionCode - Institution code
+   * @returns {Object} Market stats data
+   */
+  async getMarketStatsData(institutionCode) {
+    try {
+      const result = await TokenMarketService.getMarketStats(institutionCode);
+      
+      if (!result.success) {
+        return {
+          currentValue: 0,
+          priceChangePercentage24h: 0,
+          marketCap: 0,
+          totalSupply: 0,
+          volatility: 0
+        };
+      }
+      
+      return {
+        currentValue: result.marketStats.currentValue,
+        priceChangePercentage24h: result.marketStats.priceChangePercentage24h,
+        marketCap: result.marketStats.marketCap,
+        totalSupply: result.marketStats.totalSupply,
+        volatility: result.marketStats.volatility,
+        chartData: result.priceChartData.slice(0, 10) // Only return the most recent 10 data points
+      };
+    } catch (error) {
+      console.error('Error getting market stats data:', error);
+      return {
+        currentValue: 0,
+        priceChangePercentage24h: 0,
+        marketCap: 0,
+        totalSupply: 0,
+        volatility: 0
+      };
+    }
+  }
+  
+  /**
+   * Get market insights for all institutions
+   * @returns {Object} Market insights data
+   */
+  async getMarketInsights() {
+    try {
+      // Get all token markets
+      const markets = await TokenMarket.findAll({
+        order: [['currentValue', 'DESC']]
+      });
+      
+      // Format insights data
+      const insights = markets.map(market => ({
+        institutionCode: market.institutionCode,
+        currentValue: market.currentValue,
+        totalSupply: market.totalSupply,
+        marketCap: market.currentValue * market.totalSupply,
+        lastUpdated: market.lastUpdated
+      }));
+      
+      // Calculate market trends
+      const topPerformers = insights.slice(0, 3);
+      const bottomPerformers = [...insights].sort((a, b) => a.currentValue - b.currentValue).slice(0, 3);
+      
+      // Calculate market average
+      const marketAverage = insights.reduce((sum, market) => sum + market.currentValue, 0) / insights.length;
+      
+      return {
+        success: true,
+        insights,
+        topPerformers,
+        bottomPerformers,
+        marketAverage,
+        totalMarketCap: insights.reduce((sum, market) => sum + market.marketCap, 0)
+      };
+    } catch (error) {
+      console.error('Error getting market insights:', error);
+      return {
+        success: false,
+        message: error.message
+      };
     }
   }
 }

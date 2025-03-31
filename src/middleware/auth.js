@@ -19,6 +19,8 @@ const authenticate = async (req, res, next) => {
     }
     
     const token = authHeader.split(' ')[1];
+
+    console.log("token: ", token)
     
     try {
       const user = await AuthService.verifyToken(token);
@@ -32,6 +34,7 @@ const authenticate = async (req, res, next) => {
       });
     }
   } catch (error) {
+    console.log(error)
     return res.status(500).json({
       status: false,
       message: 'Authentication error'

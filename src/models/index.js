@@ -3,6 +3,7 @@ const Wallet = require('./Wallet');
 const Transaction = require('./Transaction');
 const TokenMarket = require('./TokenMarket');
 const Game = require('./Game');
+const VerificationCode = require('./VerificationCode');
 
 // Define associations
 User.hasOne(Wallet, { foreignKey: 'userId', as: 'wallet' });
@@ -14,6 +15,9 @@ Transaction.belongsTo(User, { foreignKey: 'userId' });
 User.hasMany(Game, { foreignKey: 'userId', as: 'games' });
 Game.belongsTo(User, { foreignKey: 'userId' });
 
+User.hasMany(VerificationCode, { foreignKey: 'userId', as: 'verificationCodes' });
+VerificationCode.belongsTo(User, { foreignKey: 'userId' });
+
 Wallet.hasMany(Transaction, { foreignKey: 'walletId', as: 'transactions' });
 Transaction.belongsTo(Wallet, { foreignKey: 'walletId' });
 
@@ -22,5 +26,6 @@ module.exports = {
   Wallet,
   Transaction,
   TokenMarket,
-  Game
+  Game,
+  VerificationCode
 };

@@ -1,6 +1,11 @@
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
-const { User, Wallet } = require('../models');
+const bcrypt = require('bcryptjs');
+const { User, Wallet, VerificationCode } = require('../models');
+const { generateVerificationCode } = require('../helpers/codeGenerator');
+const { sendVerificationEmail } = require('../helpers/emailSender');
+const { generateTokenId } = require('../helpers/tokenGenerator');
+const { Op } = require('sequelize');
 
 class AuthService {
   constructor() {
@@ -23,7 +28,7 @@ class AuthService {
       
       return response.data.data;
     } catch (error) {
-      throw new Error(`Failed to connect to NELF API: ${error.message}`);
+      throw new Error(`${error.message}`);
     }
   }
 
@@ -35,6 +40,12 @@ class AuthService {
    */
   async verifyInstituteDetails(matricNumber, providerId) {
     try {
+
+      const existingUser = await User.findOne({ where: { matricNumber: `${matricNumber}` } });
+      if (existingUser) {
+        throw new Error('User already exists. Please login instead');
+      }
+
       const response = await axios.post(
         `${this.baseUrl}/student/verify/institute-details`,
         {
@@ -52,7 +63,7 @@ class AuthService {
       if (error.response) {
         throw new Error(`Verification failed: ${error.response.data.message || 'Institute verification failed'}`);
       }
-      throw new Error(`Failed to connect to NELF API: ${error.message}`);
+      throw new Error(`${error.message}`);
     }
   }
 
@@ -65,6 +76,12 @@ class AuthService {
    */
   async verifyJambDetails(dateOfBirth, jambNumber, token) {
     try {
+
+      const existingUser = await User.findOne({ where: { regNumber: `${jambNumber}` } });
+      if (existingUser) {
+        throw new Error('User already exists. Please login instead');
+      }
+
       const response = await axios.post(
         `${this.baseUrl}/student/register/jamb/verify`,
         {
@@ -88,10 +105,10 @@ class AuthService {
         } else if (error.response.status === 404) {
           throw new Error('JAMB record not found. Please check your JAMB number and date of birth');
         } else {
-          throw new Error(`NELF API error: ${error.response.data.message || 'JAMB verification failed'}`);
+          throw new Error(`${error.response.data.message || 'JAMB verification failed'}`);
         }
       }
-      throw new Error(`Failed to connect to NELF API: ${error.message}`);
+      throw new Error(`${error.message}`);
     }
   }
 
@@ -101,7 +118,7 @@ class AuthService {
    * @param {string} matricNumber - Student's matriculation number
    * @param {string} jambNumber - Student's JAMB registration number
    * @param {string} dateOfBirth - Student's date of birth
-   * @returns {Promise<Object>} Created user and access token
+   * @returns {Promise<Object>} Created user
    */
   async verifyUser(institutionId, matricNumber, jambNumber, dateOfBirth) {
     try {
@@ -110,10 +127,17 @@ class AuthService {
       
       // Step 2: Verify JAMB details
       const userData = await this.verifyJambDetails(dateOfBirth, jambNumber, token);
-      
-      // Step 3: Create user in database
+
+      // Step 3: Check if user already exists
+      const existingUser = await User.findOne({ where: { regNumber: `${userData.RegNumber}` } });
+      if (existingUser) {
+        throw new Error('User already exists. Please login instead');
+      }
+
+      // Step 4: Create user in database
       const user = await User.create({
-        regNumber: `${userData.RegNumber} ${matricNumber}`,
+        regNumber: userData.RegNumber,
+        matricNumber: matricNumber,
         nin: userData.NIN,
         surname: userData.Surname,
         firstName: userData.FirstName,
@@ -130,23 +154,185 @@ class AuthService {
         admissionType: userData.AdmissionType,
         profilePicture: userData.ProfilePicture || null,
         requestId: userData.RequestID,
-        userType: 'student'
+        userType: 'student',
+        status: 'PENDING'
       });
 
-      // Step 4: Create wallet for the user
+      // Step 5: Create wallet for the user
       await Wallet.create({
         userId: user.id,
         balance: 0.0,
         stakedBalance: 0.0
       });
-
-      // Step 5: Generate JWT token
-      const accessToken = this.createAccessToken(user.id);
       
-      return {
-        user,
-        accessToken
-      };
+      return { user };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Send email verification code
+   * @param {number} userId - User ID
+   * @param {string} email - Email address to verify
+   * @returns {Promise<void>}
+   */
+  async sendEmailVerification(userId, email) {
+    try {
+      // Find user
+      const user = await User.findByPk(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      // Update user's email
+      user.email = email;
+      await user.save();
+      
+      // Generate verification code
+      const code = generateVerificationCode();
+      
+      // Set expiration (10 minutes from now)
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      
+      // Delete any existing verification codes for this user
+      await VerificationCode.destroy({
+        where: {
+          userId,
+          type: 'EMAIL_VERIFICATION'
+        }
+      });
+      
+      // Create new verification code
+      await VerificationCode.create({
+        userId,
+        code,
+        type: 'EMAIL_VERIFICATION',
+        expiresAt
+      });
+      
+      // Send verification email
+      await sendVerificationEmail(email, code);
+      
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Verify email with verification code
+   * @param {number} userId - User ID
+   * @param {string} code - Verification code
+   * @returns {Promise<Object>} Updated user
+   */
+  async verifyEmail(userId, code) {
+    try {
+      // Find user
+      const user = await User.findByPk(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+      
+      // Find verification code
+      const verificationCode = await VerificationCode.findOne({
+        where: {
+          userId,
+          code,
+          type: 'EMAIL_VERIFICATION',
+          expiresAt: {
+            [Op.gt]: new Date()
+          }
+        }
+      });
+      
+      if (!verificationCode) {
+        throw new Error('Invalid or expired verification code');
+      }
+      
+      // Update user
+      user.emailVerified = true;
+      user.status = 'ACTIVE';
+      await user.save();
+      
+      // Delete verification code
+      await verificationCode.destroy();
+      
+      return { user };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Set or update user password
+   * @param {number} userId - User ID
+   * @param {string} password - New password
+   * @returns {Promise<void>}
+   */
+  async setPassword(userId, password) {
+    try {
+      // Find user
+      const user = await User.findByPk(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+      
+      // Hash password
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+      
+      // Update user
+      user.password = hashedPassword;
+      await user.save();
+      
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
+   * Login with email and password
+   * @param {string} email - User email
+   * @param {string} password - User password
+   * @returns {Promise<Object>} User
+   */
+  async login(email, password) {
+    try {
+      // Find user by email
+      const user = await User.findOne({
+        where: { email }
+      });
+      
+      if (!user) {
+        throw new Error('Invalid email or password');
+      }
+      
+      // Check if user has a password set
+      if (!user.password) {
+        throw new Error('Password not set. Please set your password first.');
+      }
+      
+      // Verify password
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        throw new Error('Invalid email or password');
+      }
+      
+      // Check if email is verified
+      if (!user.emailVerified) {
+        throw new Error('Email not verified. Please verify your email first.');
+      }
+      
+      // Check user status
+      if (user.status === 'BANNED') {
+        throw new Error('Your account has been banned. Please contact support.');
+      }
+      
+      if (user.status === 'DELETED') {
+        throw new Error('Your account has been deleted.');
+      }
+      
+      return { user };
     } catch (error) {
       throw error;
     }
@@ -155,14 +341,39 @@ class AuthService {
   /**
    * Create a JWT access token for user authentication
    * @param {number} userId - User ID to encode in the token
+   * @param {string} firstName - User's first name
+   * @param {string} surname - User's surname
    * @returns {string} JWT token
    */
-  createAccessToken(userId) {
-    return jwt.sign(
-      { sub: userId },
-      this.jwtSecret,
-      { expiresIn: this.jwtExpiresIn }
-    );
+  async createAccessToken(userId, firstName = '', surname = '') {
+    try {
+      // Find user
+      const user = await User.findByPk(userId);
+      if (!user) {
+        throw new Error('User not found');
+      }
+      
+      // Generate a new token ID
+      const tokenId = generateTokenId(10);
+      
+      // Save token ID to user record
+      user.tokenId = tokenId;
+      await user.save();
+      
+      // Create JWT with token ID
+      return jwt.sign(
+        { 
+          sub: userId,
+          firstName,
+          surname,
+          tokenId
+        },
+        this.jwtSecret,
+        { expiresIn: this.jwtExpiresIn }
+      );
+    } catch (error) {
+      throw error;
+    }
   }
 
   /**
@@ -171,13 +382,22 @@ class AuthService {
    * @returns {Promise<Object>} User object
    */
   async verifyToken(token) {
+
+    console.log(token)
+
     try {
       const decoded = jwt.verify(token, this.jwtSecret);
       const userId = decoded.sub;
+      const tokenId = decoded.tokenId;
       
       const user = await User.findByPk(userId);
       if (!user) {
         throw new Error('User not found');
+      }
+      
+      // Verify that the token ID matches the one stored in the database
+      if (!tokenId || user.tokenId !== tokenId) {
+        throw new Error('Invalid token. Please login again.');
       }
       
       return user;

@@ -3,6 +3,7 @@ const cors = require('cors');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const { sequelize, testConnection } = require('./config/database');
+const { initCronJobs } = require('./cron');
 require('dotenv').config();
 
 // Import routes
@@ -10,6 +11,11 @@ const authRoutes = require('./routes/authRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const tokenMarketRoutes = require('./routes/tokenMarketRoutes');
 const gameRoutes = require('./routes/gameRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+
+// Import middleware
+const { authenticate } = require('./middleware/auth');
+const { checkUserStatus } = require('./middleware/checkUserStatus');
 
 // Initialize express app
 const app = express();
@@ -43,7 +49,7 @@ const swaggerOptions = {
         description: 'Development server'
       },
       {
-        url: `http://acad-celestia-backend.mygenius.ng`,
+        url: `https://acad-celestia-backend.mygenius.ng`,
         description: 'Production server'
       }
     ],
@@ -65,9 +71,13 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
 // Routes
 app.use('/api', authRoutes);
-app.use('/api', walletRoutes);
-app.use('/api', tokenMarketRoutes);
-app.use('/api', gameRoutes);
+
+// Apply checkUserStatus middleware to all protected routes except for auth routes
+// This ensures that only ACTIVE users can access these endpoints
+app.use('/api', authenticate, checkUserStatus, walletRoutes);
+app.use('/api', authenticate, checkUserStatus, tokenMarketRoutes);
+app.use('/api', authenticate, checkUserStatus, gameRoutes);
+app.use('/api/dashboard', authenticate, checkUserStatus, dashboardRoutes);
 
 // Root route
 app.get('/', (req, res) => {
@@ -86,6 +96,9 @@ const startServer = async () => {
     // Sync models with database
     await sequelize.sync({ alter: process.env.NODE_ENV === 'development' });
     console.log('Database synchronized');
+    
+    // Initialize cron jobs
+    initCronJobs();
     
     // Start server
     app.listen(PORT, () => {
