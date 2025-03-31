@@ -1,4 +1,4 @@
-const { TokenMarket, Wallet, Transaction, User } = require('../models');
+const { TokenMarket, Wallet, TokenBalance, Transaction, User } = require('../models');
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 
@@ -175,80 +175,219 @@ class TokenMarketService {
       // Get transaction history for price chart
       const recentTransactions = await Transaction.findAll({
         where: {
-          metadata: {
-            institutionCode
+          tokenCode: institutionCode,
+          transactionType: {
+            [Op.in]: ['buy', 'sell', 'swap']
           }
         },
         order: [['createdAt', 'DESC']],
         limit: 50
       });
       
-      // Calculate market volatility (standard deviation of price changes)
-      let volatility = 0;
-      if (recentTransactions.length > 1) {
-        const priceChanges = [];
-        for (let i = 0; i < recentTransactions.length - 1; i++) {
-          const currentPrice = recentTransactions[i].metadata.newTokenValue;
-          const previousPrice = recentTransactions[i + 1].metadata.newTokenValue;
-          if (currentPrice && previousPrice) {
-            const percentChange = ((currentPrice - previousPrice) / previousPrice) * 100;
-            priceChanges.push(percentChange);
-          }
-        }
-        
-        if (priceChanges.length > 0) {
-          const mean = priceChanges.reduce((sum, val) => sum + val, 0) / priceChanges.length;
-          volatility = Math.sqrt(
-            priceChanges.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / priceChanges.length
-          );
-        }
-      }
-      
-      // Calculate 24-hour price change
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const oldestTransaction = await Transaction.findOne({
-        where: {
-          metadata: {
-            institutionCode
-          },
-          createdAt: {
-            [Op.gte]: twentyFourHoursAgo
-          }
-        },
-        order: [['createdAt', 'ASC']]
-      });
-      
-      let priceChange24h = 0;
-      let priceChangePercentage24h = 0;
-      
-      if (oldestTransaction && oldestTransaction.metadata.tokenValue) {
-        const oldPrice = oldestTransaction.metadata.tokenValue;
-        priceChange24h = tokenMarket.currentValue - oldPrice;
-        priceChangePercentage24h = (priceChange24h / oldPrice) * 100;
-      }
-      
-      // Format data for price chart
-      const priceChartData = recentTransactions.map(transaction => ({
-        timestamp: transaction.createdAt,
-        price: transaction.metadata.newTokenValue || transaction.metadata.tokenValue,
-        type: transaction.transactionType
+      // Format price chart data
+      const priceChartData = recentTransactions.map(tx => ({
+        timestamp: tx.createdAt,
+        price: tx.tokenPrice || 0
       })).reverse();
+      
+      // Calculate market stats
+      const marketStats = {
+        institutionCode: tokenMarket.institutionCode,
+        institutionName: tokenMarket.institutionName,
+        institutionType: tokenMarket.institutionType,
+        currentValue: tokenMarket.currentValue,
+        change24h: tokenMarket.change24h,
+        volume24h: tokenMarket.volume24h,
+        marketCap: tokenMarket.marketCap,
+        circulatingSupply: tokenMarket.circulatingSupply,
+        totalSupply: tokenMarket.totalSupply,
+        lastUpdated: tokenMarket.lastUpdated
+      };
       
       return {
         success: true,
-        marketStats: {
-          currentValue: tokenMarket.currentValue,
-          totalSupply: tokenMarket.totalSupply,
-          liquidityPool: tokenMarket.liquidityPool,
-          lastUpdated: tokenMarket.lastUpdated,
-          priceChange24h,
-          priceChangePercentage24h,
-          volatility,
-          marketCap: tokenMarket.currentValue * tokenMarket.totalSupply
-        },
+        marketStats,
         priceChartData
       };
     } catch (error) {
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+  
+  /**
+   * Get user's token balances
+   * @param {number} userId - User ID
+   * @returns {Object} Token balances with values
+   */
+  async getUserTokenBalances(userId) {
+    try {
+      const tokenBalances = await TokenBalance.findAll({
+        where: { userId },
+        include: [{
+          model: TokenMarket,
+          attributes: ['institutionName', 'currentValue', 'change24h']
+        }]
+      });
+      
+      // Calculate total value in Naira
+      let totalValue = 0;
+      const formattedBalances = tokenBalances.map(balance => {
+        const value = balance.balance * balance.TokenMarket.currentValue;
+        totalValue += value;
+        
+        return {
+          institutionCode: balance.institutionCode,
+          institutionName: balance.TokenMarket.institutionName,
+          balance: balance.balance,
+          currentValue: balance.TokenMarket.currentValue,
+          change24h: balance.TokenMarket.change24h,
+          value
+        };
+      });
+      
+      return {
+        success: true,
+        tokenBalances: formattedBalances,
+        totalValue
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+  
+  /**
+   * Get market insights for all institutions
+   * @returns {Object} Market insights
+   */
+  async getMarketInsights() {
+    try {
+      const tokenMarkets = await TokenMarket.findAll({
+        order: [
+          ['volume24h', 'DESC']
+        ],
+        limit: 20
+      });
+      
+      const topGainers = [...tokenMarkets].sort((a, b) => b.change24h - a.change24h).slice(0, 5);
+      const topLosers = [...tokenMarkets].sort((a, b) => a.change24h - b.change24h).slice(0, 5);
+      const mostActive = tokenMarkets.slice(0, 5); // Already sorted by volume
+      
+      const insights = {
+        topGainers: topGainers.map(token => ({
+          institutionCode: token.institutionCode,
+          institutionName: token.institutionName,
+          currentValue: token.currentValue,
+          change24h: token.change24h
+        })),
+        topLosers: topLosers.map(token => ({
+          institutionCode: token.institutionCode,
+          institutionName: token.institutionName,
+          currentValue: token.currentValue,
+          change24h: token.change24h
+        })),
+        mostActive: mostActive.map(token => ({
+          institutionCode: token.institutionCode,
+          institutionName: token.institutionName,
+          currentValue: token.currentValue,
+          volume24h: token.volume24h
+        })),
+        marketOverview: {
+          totalMarketCap: tokenMarkets.reduce((sum, token) => sum + token.marketCap, 0),
+          totalVolume24h: tokenMarkets.reduce((sum, token) => sum + token.volume24h, 0),
+          averageChange24h: tokenMarkets.reduce((sum, token) => sum + token.change24h, 0) / tokenMarkets.length
+        }
+      };
+      
+      return {
+        success: true,
+        insights
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+  
+  /**
+   * Update market statistics for all tokens
+   * This should be run periodically to update 24h changes
+   * @returns {Object} Result of the operation
+   */
+  async updateMarketStats() {
+    const t = await sequelize.transaction();
+    
+    try {
+      // Get all token markets
+      const tokenMarkets = await TokenMarket.findAll({
+        transaction: t
+      });
+      
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+      
+      // Update each token market
+      for (const tokenMarket of tokenMarkets) {
+        // Get 24h volume from transactions
+        const volume24h = await Transaction.sum('amount', {
+          where: {
+            tokenCode: tokenMarket.institutionCode,
+            transactionType: {
+              [Op.in]: ['buy', 'sell', 'swap']
+            },
+            createdAt: {
+              [Op.gte]: yesterday
+            }
+          },
+          transaction: t
+        }) || 0;
+        
+        // Get previous day's value from transactions
+        const oldestTransaction = await Transaction.findOne({
+          where: {
+            tokenCode: tokenMarket.institutionCode,
+            transactionType: {
+              [Op.in]: ['buy', 'sell', 'swap']
+            },
+            createdAt: {
+              [Op.between]: [yesterday, now]
+            }
+          },
+          order: [['createdAt', 'ASC']],
+          transaction: t
+        });
+        
+        // Calculate 24h change
+        let change24h = 0;
+        if (oldestTransaction && oldestTransaction.tokenPrice) {
+          const oldValue = oldestTransaction.tokenPrice;
+          change24h = ((tokenMarket.currentValue - oldValue) / oldValue) * 100;
+        }
+        
+        // Update token market
+        tokenMarket.volume24h = volume24h;
+        tokenMarket.change24h = change24h;
+        tokenMarket.marketCap = tokenMarket.currentValue * tokenMarket.circulatingSupply;
+        tokenMarket.lastUpdated = now;
+        
+        await tokenMarket.save({ transaction: t });
+      }
+      
+      await t.commit();
+      
+      return {
+        success: true,
+        message: `Successfully updated market stats for ${tokenMarkets.length} tokens`
+      };
+    } catch (error) {
+      await t.rollback();
       return {
         success: false,
         message: error.message

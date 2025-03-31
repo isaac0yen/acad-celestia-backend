@@ -16,10 +16,12 @@ const Wallet = sequelize.define('Wallet', {
       key: 'id'
     }
   },
-  balance: {
+  nairaBalance: {
     type: DataTypes.FLOAT,
     defaultValue: 0.0,
-    allowNull: false
+    allowNull: false,
+    field: 'naira_balance',
+    comment: 'User balance in Nigerian Naira (NGN)'
   },
   stakedBalance: {
     type: DataTypes.FLOAT,
